@@ -5,14 +5,9 @@ import com.example.parkinglot.exceptions.ConflictException;
 import com.example.parkinglot.exceptions.ResourceNotFoundException;
 import com.example.parkinglot.models.*;
 import com.example.parkinglot.repos.*;
-import com.example.parkinglot.services.allocation.SlotAllocationFactory;
-import com.example.parkinglot.services.allocation.SlotAllocationStrategy;
-import com.example.parkinglot.services.allocation.SlotAllocationStrategyType;
-import com.example.parkinglot.services.pricing.PricingStrategy;
-import com.example.parkinglot.services.pricing.PricingStrategyFactory;
-import com.example.parkinglot.services.pricing.PricingStrategyType;
+import com.example.parkinglot.services.allocation.NearestFitSlotAllocator;
+import com.example.parkinglot.services.pricing.AdaptivePricingService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,14 +30,8 @@ public class ParkingService {
     private final VehicleRepository vehicleRepository;
     private final TicketRepository ticketRepository;
     private final PaymentRepository paymentRepository;
-    private final PricingStrategyFactory pricingStrategyFactory;
-    private final SlotAllocationFactory slotAllocationFactory;
-
-    @Value("${parking.pricing-strategy:HOURLY}")
-    private String pricingStrategyType;
-
-    @Value("${parking.slot-allocation-strategy:FIRST_FIT}")
-    private String slotAllocationStrategyType;
+    private final AdaptivePricingService adaptivePricingService;
+    private final NearestFitSlotAllocator nearestFitSlotAllocator;
 
     public TicketResponse parkVehicle(EntryRequest request) {
         ParkingLot parkingLot = parkingLotRepository.findById(request.parkingLotId())
@@ -149,16 +138,8 @@ public class ParkingService {
         }
 
         try {
-            SlotAllocationStrategyType strategyType = SlotAllocationStrategyType.valueOf(slotAllocationStrategyType);
-            SlotAllocationStrategy strategy = slotAllocationFactory.createStrategy(strategyType);
-            return strategy.allocateSlot(availableSlots, vehicleType);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            // Fall back to default strategy if configuration is invalid
-            try {
-                return slotAllocationFactory.createDefaultStrategy().allocateSlot(availableSlots, vehicleType);
-            } catch (Exception ex) {
-                throw new ConflictException("Error allocating slot: " + ex.getMessage());
-            }
+            // Always use NEAREST_FIT allocation strategy for optimal user experience
+            return nearestFitSlotAllocator.allocateSlot(availableSlots, vehicleType);
         } catch (Exception e) {
             throw new ConflictException("Error allocating slot: " + e.getMessage());
         }
@@ -173,14 +154,12 @@ public class ParkingService {
     }
 
     private BigDecimal calculateAmount(Ticket ticket, LocalDateTime exitTime) {
-        try {
-            PricingStrategyType strategyType = PricingStrategyType.valueOf(pricingStrategyType);
-            PricingStrategy strategy = pricingStrategyFactory.createStrategy(strategyType);
-            return strategy.calculateFee(ticket, exitTime);
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            // Fall back to default strategy if configuration is invalid
-            return pricingStrategyFactory.createDefaultStrategy().calculateFee(ticket, exitTime);
-        }
+        // Use adaptive pricing service which automatically selects the best strategy
+        // based on parking duration:
+        // - 0-24 hours: Hourly rate
+        // - 1-7 days: Daily rate
+        // - 7+ days: Weekly rate
+        return adaptivePricingService.calculateAdaptiveFee(ticket, exitTime);
     }
 
     private TicketResponse toTicketResponse(Ticket ticket) {
