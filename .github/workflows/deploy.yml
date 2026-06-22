@@ -42,7 +42,7 @@ jobs:
             sleep 5
           
             export MYSQL_USERNAME=admin
-            export MYSQL_PASSWORD='YOUR_RDS_PASSWORD'
+            export MYSQL_PASSWORD=adminadmin
             export SPRING_DATASOURCE_URL='jdbc:mysql://parking-lot-db.chum4mcikyfd.eu-north-1.rds.amazonaws.com:3306/parkinglotdb?createDatabaseIfNotExist=true&serverTimezone=UTC'
           
             nohup java -jar /home/ec2-user/Parking-lot-0.0.1-SNAPSHOT.jar > /home/ec2-user/app.log 2>&1 < /dev/null &
